@@ -5,6 +5,8 @@ on:
     types: [closed, labeled]
     branches:
       - main
+  push:
+    
 
 jobs:
   build-and-push:
