@@ -1,8 +1,11 @@
 name: Build and Deploy Docker Image
 
 on:
+  push:
+    branches:
+      - main
   pull_request:
-    types: [closed, labeled]
+    types: [closed]
     branches:
       - main
 
@@ -41,14 +44,27 @@ jobs:
       - name: Determine ECR Repository
         id: ecr-repo
         run: |
-          if [[ "${{ github.event.pull_request.labels }}" == *"development"* ]]; then
+          if [[ "${{ github.event.pull_request.merged }}" == "true" && "${{ github.event.pull_request.labels }}" == *"production"* ]]; then
+            echo "ECR_REPOSITORY=${{ secrets.PROD_ECR_URI }}" >> $GITHUB_ENV
+          elif [[ "${{ github.event.pull_request.merged }}" != "true" && "${{ github.event.pull_request.labels }}" == *"development"* ]]; then
             echo "ECR_REPOSITORY=${{ secrets.DEV_ECR_URI }}" >> $GITHUB_ENV
-          else
+          elif [[ "${{ github.event.pull_request.merged }}" != "true" && -z "${{ github.event.pull_request.labels }}" ]]; then
+            echo "ECR_REPOSITORY=${{ secrets.DEV_ECR_URI }}" >> $GITHUB_ENV
+          elif [[ "${{ github.event.pull_request.merged }}" == "true" && -z "${{ github.event.pull_request.labels }}" ]]; then
             echo "ECR_REPOSITORY=${{ secrets.PROD_ECR_URI }}" >> $GITHUB_ENV
           fi
 
       - name: Tag Docker image
         run: docker tag ${{ env.DOCKER_IMAGE }} ${{ env.ECR_REPOSITORY }}:${{ github.sha }}
 
-      - name: Push Docker image
+      - name: Push Docker image to Dev (with development label or no label)
+        if: |
+          (github.event_name == 'push' && (github.event.pull_request.labels != 'production')) ||
+          (github.event_name == 'pull_request' && github.event.pull_request.merged == false && env.ECR_REPOSITORY == secrets.DEV_ECR_URI)
+        run: docker push ${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+
+      - name: Push Docker image to Prod (after merge with production label or no label)
+        if: |
+          github.event_name == 'pull_request' && github.event.pull_request.merged == true &&
+          (env.ECR_REPOSITORY == secrets.PROD_ECR_URI)
         run: docker push ${{ env.ECR_REPOSITORY }}:${{ github.sha }}
